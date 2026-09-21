@@ -33,9 +33,81 @@ By default a run samples 300 prompts, split evenly between the two datasets. Tha
 have the same attack-to-benign ratio as the full corpus, so precision and accuracy from a default
 run are not directly comparable with a `--full` run.
 
-In one 50-prompt sample during development, Jev scored 94% accuracy at a 0.5 threshold (precision
-100%, recall 85%, AUC 0.997), with a median latency around 360 ms, for $0.003. Treat that as a
-smoke test, not a benchmark; run it yourself.
+## Reading the wall
+
+The examples below use one default run of 300 prompts. Your numbers will differ a little from run
+to run; treat them as an illustration, not a benchmark.
+
+### The block threshold
+
+Jev does not answer yes or no. For each prompt it returns a probability that the prompt is an
+attack. The threshold is where you draw the line: at 0.50, a prompt scored 0.50 or higher is
+BLOCKED and anything lower is ALLOWED. The threshold is your choice, not Jev's. Lower it and you
+catch more attacks at the risk of blocking legitimate users; raise it and the reverse. Moving the
+slider re-decides every prompt from the probabilities already received. It makes no new API calls.
+
+### Caught, false alarms, missed, clean
+
+Every prompt carries a human label from its dataset. Comparing Jev's decision with that label puts
+each prompt in one of four boxes:
+
+| | Label says attack | Label says benign |
+|---|---|---|
+| **Jev blocked** | caught (110) | false alarm (0) |
+| **Jev allowed** | missed (27) | clean (163) |
+
+- **Accuracy** is how often Jev was right overall: (110 + 163) / 300 = 91.0%.
+- **Precision** is how many of the prompts it blocked were real attacks: 110 / 110 = 100%. High
+  precision means legitimate users are not blocked.
+- **Recall** is how many of the real attacks it caught: 110 / 137 = 80.3%. High recall means few
+  attacks get through.
+
+Precision and recall pull against each other, and the threshold sets the balance between them.
+
+### ROC curve and AUC
+
+Accuracy describes one threshold. The ROC curve shows all of them at once. Each point on the line
+is one possible threshold: its height is the share of attacks caught, and its distance to the right
+is the share of benign prompts wrongly blocked. The red dot is the current threshold. A model that
+guesses follows the dashed diagonal; a perfect one hugs the top-left corner.
+
+**AUC** is the area under that line, from 0.5 (guessing) to 1.0 (perfect). Read it this way: pick
+one attack and one benign prompt at random, and AUC is the chance Jev scores the attack higher. In
+this run it was 0.971. Because AUC does not depend on any threshold, it is the fairest single
+measure of how well Jev separates attacks from ordinary prompts.
+
+### Reliability chart and ECE
+
+This chart asks whether Jev's probabilities mean what they say. Prompts are grouped by the
+probability Jev gave them, and each dot shows how many prompts in that group really were attacks.
+If Jev is well calibrated, 70% of the prompts it scored around 0.70 are attacks, and the dots sit on
+the dashed diagonal. Larger dots hold more prompts.
+
+Dots above the diagonal mean Jev is underconfident: more of those prompts were attacks than its
+score suggested. Dots below mean overconfident. In this run the dots sat above the line, which is
+also why lowering the threshold below 0.50 recovers missed attacks cheaply.
+
+**ECE**, the expected calibration error, is the average gap between the confidence Jev stated and
+what actually happened, weighted by how many prompts fall in each group. Zero is perfect. This run
+scored 0.081, so Jev's probabilities were off by about eight percentage points on average. Both
+charts wait until the run has seen at least one attack and one benign prompt.
+
+### Latency, throughput, cost
+
+- **p50 latency** is the time a typical call took; **p95** is the slow tail, the time 95% of calls
+  beat. Both are measured around the API call alone, not the page or the queue. This run: 346 ms
+  and 459 ms.
+- **req/s** is throughput with several calls in flight at once, so it is not the inverse of latency.
+- **scored** counts prompts that got a verdict. **errors** counts failed calls, which are left out
+  of every other number and are never treated as "allowed".
+- **cost** is computed from the input tokens the API reported. This run: $0.018.
+
+### Accuracy by dataset
+
+The same accuracy, split by source. In this run Jev was right on 97.3% of the jailbreak prompts
+and 84.7% of the injection prompts. Jailbreaks tend to be long and blatant. The injection set is
+subtler, partly in German, and some of its labels are debatable, so part of that gap belongs to the
+data rather than to Jev.
 
 ## Setup
 
