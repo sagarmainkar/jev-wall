@@ -1008,8 +1008,18 @@ function renderMatrix() {
    5. STAGE: card flight, prism, beams
    ======================================================================== */
 
-let inFlight = 0;
+// Cards currently flying. The set IS the counter: `Animation.cancel()` delivers its event
+// asynchronously, so a stale callback from a cancelled pass must not be able to decrement anything
+// twice. `settle()` is the single exit for a card and is idempotent, because a card that has
+// already left the set is simply not in it any more.
+const flights = new Set();
 let track = 0;
+
+function settle(card) {
+  if (!flights.delete(card)) return false;
+  card.remove();
+  return true;
+}
 
 // The stage rect and the prism centre are the same for every beam drawn in one frame, so they are
 // measured once per frame instead of once per beam. Invalidated on resize, scroll and next frame.
@@ -1127,7 +1137,7 @@ function fly(e) {
   const y = 12 + (track++ % rows) * 30;
   const distance = lane.clientWidth + 216;
 
-  inFlight++;
+  flights.add(card);
   const run = card.animate(
     [{ transform: "translate(-216px," + y + "px)", opacity: 0 },
      { transform: "translate(" + (distance * 0.12 - 216) + "px," + y + "px)", opacity: 1, offset: 0.14 },
@@ -1135,29 +1145,38 @@ function fly(e) {
      { transform: "translate(" + (distance - 200) + "px," + y + "px)", opacity: 0 }],
     { duration: FLIGHT_MS, easing: "cubic-bezier(.32,.1,.36,1)" },
   );
-  const done = () => {
-    card.remove();
-    inFlight--;
+  run.onfinish = () => {
+    if (!settle(card)) return;
     const prism = $("prism");
     prism.classList.add("hit");
     setTimeout(() => prism.classList.remove("hit"), 150);
     land(e);
   };
-  run.onfinish = done;
-  run.oncancel = () => { card.remove(); inFlight--; };
+  run.oncancel = () => { settle(card); };
 }
 
 // Cancel everything mid-flight so a reset pass is not landed on by the previous one's cards.
 function clearStage() {
   for (const card of $("lane").querySelectorAll(".card")) {
-    card.getAnimations().forEach((a) => a.cancel());
+    // Detach the handlers before cancelling: the cancel event arrives on a later task, and by then
+    // the card belongs to a pass that no longer exists.
+    for (const animation of card.getAnimations()) {
+      animation.onfinish = null;
+      animation.oncancel = null;
+      animation.cancel();
+    }
+    flights.delete(card);
     card.remove();
   }
   for (const node of [...$("beams").children]) {
-    node.getAnimations().forEach((a) => a.cancel());
+    for (const animation of node.getAnimations()) {
+      animation.onfinish = null;
+      animation.oncancel = null;
+      animation.cancel();
+    }
     node.remove();
   }
-  inFlight = 0;
+  flights.clear();
   track = 0;
 }
 
@@ -1456,7 +1475,7 @@ function ingest(e) {
 
   showLast(e);
   if (REDUCED) land(e);
-  else if (inFlight >= MAX_FLIGHTS) land(e, { animate: false });
+  else if (flights.size >= MAX_FLIGHTS) land(e, { animate: false });
   else fly(e);
   scheduleRender();
 }
