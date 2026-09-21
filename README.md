@@ -114,7 +114,7 @@ data rather than to Jev.
 You need [uv](https://docs.astral.sh/uv/) and a Jev API key.
 
 ```bash
-git clone <this repo> && cd jev
+git clone https://github.com/sagarmainkar/jev-wall.git && cd jev-wall
 uv sync
 echo "JEV_API_KEY=your-key-here" > .env
 ```
