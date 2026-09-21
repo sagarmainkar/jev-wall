@@ -86,6 +86,9 @@ def create_app(
         async def busy() -> AsyncIterator[str]:
             yield _sse({"type": "fatal", "message": "A run is already in progress."})
 
+        # Claimed here rather than inside the generator: two requests that arrive in the same
+        # tick would both pass a check made after the response is handed back, and each would
+        # spend. `messages()` releases it in a `finally`, whatever ends the run.
         if running:
             return as_sse(busy())
         running = True

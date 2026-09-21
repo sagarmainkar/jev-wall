@@ -5,6 +5,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from jevwall.corpus import DEFAULT_LIMIT, Record
+from jevwall.export import MARKER
 from jevwall.judge import JudgeError, Verdict
 from jevwall.server import create_app
 
@@ -50,7 +51,7 @@ def sse_messages(text):
 def test_index_serves_page_with_live_marker(tmp_path, monkeypatch):
     response = client(tmp_path, monkeypatch).get("/")
     assert response.status_code == 200
-    assert "/*__JEVWALL_RUN__*/null" in response.text
+    assert MARKER in response.text
 
 
 def test_taxonomy_endpoint(tmp_path, monkeypatch):
