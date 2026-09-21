@@ -4,7 +4,7 @@ import json
 import httpx
 from fastapi.testclient import TestClient
 
-from jevwall.corpus import Record
+from jevwall.corpus import DEFAULT_LIMIT, Record
 from jevwall.judge import JudgeError, Verdict
 from jevwall.server import create_app
 
@@ -191,7 +191,7 @@ def test_stream_full_loads_everything(tmp_path, monkeypatch):
 def test_session_endpoint_returns_token(tmp_path, monkeypatch):
     response = client(tmp_path, monkeypatch).get("/session")
     assert response.status_code == 200
-    assert response.json() == {"token": "test-token"}
+    assert response.json() == {"token": "test-token", "default_limit": DEFAULT_LIMIT}
 
 
 def test_stream_without_token_is_forbidden_and_does_not_load(tmp_path, monkeypatch):

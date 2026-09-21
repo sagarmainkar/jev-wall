@@ -578,7 +578,9 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 
 :focus-visible { outline: 2px solid var(--jev); outline-offset: 2px; }
 
-#caveat { font-size: 11px; color: var(--dim); max-width: 74ch; }
+#caveat { font-size: 11px; color: var(--dim); max-width: 74ch; line-height: 1.5; }
+#caveat a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+#caveat a:hover { color: var(--mid); }
 
 #banner {
   font-family: var(--mono);
@@ -592,6 +594,19 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 
 #banner.on { display: block; }
 #banner.bad { color: var(--blocked); border-color: rgba(255,77,109,.5); background: rgba(255,77,109,.08); }
+
+/* Per-prompt API errors are ordinary weather in a long run, not a failed run. */
+#errnote {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--sev1);
+  border: 1px solid rgba(255,215,122,.35);
+  background: rgba(255,215,122,.06);
+  border-radius: 3px;
+  padding: 4px 9px;
+  display: none;
+}
+#errnote.on { display: block; }
 
 .foot-right { display: grid; gap: 8px; justify-items: start; }
 
@@ -760,6 +775,7 @@ window.JEVWALL_RUN = /*__JEVWALL_RUN__*/null;
 <footer>
   <div class="foot-right">
     <div id="controls"></div>
+    <div id="errnote"></div>
     <div id="banner"></div>
   </div>
   <div class="foot-right" style="width:100%">
@@ -780,7 +796,7 @@ window.JEVWALL_RUN = /*__JEVWALL_RUN__*/null;
         </div>
       </div>
     </div>
-    <p id="caveat">Ground truth exists only for attack vs benign. Technique and severity are Jev's own judgement and are not scored.</p>
+    <p id="caveat">Ground truth exists only for attack vs benign. Technique and severity are Jev's own judgement and are not scored. Prompts from <a href="https://huggingface.co/datasets/deepset/prompt-injections" target="_blank" rel="noopener">deepset/prompt-injections</a> and <a href="https://huggingface.co/datasets/jackhhao/jailbreak-classification" target="_blank" rel="noopener">jackhhao/jailbreak-classification</a> (both Apache 2.0). A limited run samples both datasets equally, so its attack-to-benign mix differs from the full corpus.</p>
   </div>
 </footer>
 
@@ -797,13 +813,15 @@ window.JEVWALL_RUN = /*__JEVWALL_RUN__*/null;
 const RUN = window.JEVWALL_RUN;
 const REPLAY = RUN !== null;
 let sessionToken = "";
+// Fallback only: the real default comes from GET /session, which serves corpus.DEFAULT_LIMIT.
+const FALLBACK_LIMIT = 300;
+let defaultLimit = FALLBACK_LIMIT;
 
 const state = {
   events: [],
   errors: 0,
   tokens: 0,
   threshold: 0.5,
-  startedAt: null,
   estimated: false,
   techniqueCounts: new Map(),   // technique id -> count
   techniqueSamples: new Map(),  // technique id -> last 5 prompt texts
@@ -827,6 +845,7 @@ const SEVERITY_HEX = ["#5d6e90", "#ffd77a", "#ff9f45", "#ff5a5a"];
 // Only events with a verdict count. Errors are excluded from every metric.
 const scored = () => state.events.filter((e) => e.error === null);
 
+// <metrics>
 function confusion(events, threshold) {
   let tp = 0, fp = 0, tn = 0, fn = 0;
   for (const e of events) {
@@ -877,6 +896,7 @@ function percentile(values, p) {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
+// </metrics>
 
 const costDollars = () => state.tokens * 0.042 / 1e6;
 
@@ -1453,7 +1473,7 @@ function ingest(e) {
   if (e.error) {
     state.errors++;
     state.events.push(e);
-    banner({ type: "fatal", message: "Prompt " + e.id + ": " + e.error }, true);
+    errorNote();
     scheduleRender();
     return;
   }
@@ -1493,6 +1513,16 @@ function wireThreshold() {
   });
 }
 
+// A prompt that errored is excluded from every metric, but the run itself is fine: say so
+// quietly and keep the count current. The red banner stays for fatals and dropped streams.
+function errorNote() {
+  const el = $("errnote");
+  el.classList.toggle("on", state.errors > 0);
+  el.textContent = state.errors === 1
+    ? "1 prompt errored — excluded from every metric"
+    : state.errors + " prompts errored — excluded from every metric";
+}
+
 function banner(payload, bad) {
   const el = $("banner");
   el.classList.add("on");
@@ -1519,10 +1549,16 @@ function setupLive() {
   const limitInput = document.createElement("input");
   limitInput.type = "number";
   limitInput.min = "1";
-  limitInput.value = "300";
+  limitInput.step = "1";
+  limitInput.value = String(defaultLimit);
   limitInput.id = "limit";
   label.prepend(limitInput);
   label.style.flexDirection = "row-reverse";
+
+  const limitMessage = document.createElement("span");
+  limitMessage.id = "limit-msg";
+  limitMessage.className = "cap";
+  limitMessage.style.color = "var(--sev1)";
 
   const fullLabel = document.createElement("label");
   const full = document.createElement("input");
@@ -1534,17 +1570,30 @@ function setupLive() {
   startButton.id = "start";
   startButton.textContent = "Start run";
 
-  controls.append(label, fullLabel, startButton);
+  controls.append(label, fullLabel, startButton, limitMessage);
 
-  full.addEventListener("change", () => { limitInput.disabled = full.checked; });
+  full.addEventListener("change", () => {
+    limitInput.disabled = full.checked;
+    if (full.checked) limitMessage.textContent = "";
+  });
 
   startButton.onclick = () => {
+    let query = "full=true";
+    if (!full.checked) {
+      // Only a whole number of prompts, at least one: anything else is a run nobody meant.
+      const limit = Number(limitInput.value);
+      if (!Number.isInteger(limit) || limit < 1) {
+        limitMessage.textContent = "Enter a whole number of prompts, 1 or more.";
+        limitInput.focus();
+        return;
+      }
+      limitMessage.textContent = "";
+      query = "limit=" + encodeURIComponent(String(limit));
+    }
     startButton.disabled = true;
     startButton.textContent = "Running…";
-    const query = full.checked ? "full=true"
-      : (limitInput.value ? "limit=" + encodeURIComponent(limitInput.value) : "");
     const source = new EventSource(
-      "/stream?" + query + (query ? "&" : "") + "token=" + encodeURIComponent(sessionToken)
+      "/stream?" + query + "&token=" + encodeURIComponent(sessionToken)
     );
     const stop = (text) => {
       source.close();
@@ -1627,6 +1676,7 @@ function setupReplay() {
     state.events = []; state.errors = 0; state.tokens = 0; state.estimated = false;
     state.techniqueCounts.clear(); state.techniqueSamples.clear(); state.noneCount = 0;
     $("banner").classList.remove("on");
+    errorNote();
     setText($("last-text"), "Waiting for the first prompt.");
     scheduleRender();
     start();
@@ -1738,7 +1788,11 @@ async function boot() {
   } else {
     try {
       tactics = await getJson("/taxonomy");
-      sessionToken = (await getJson("/session")).token;
+      const session = await getJson("/session");
+      sessionToken = session.token;
+      if (Number.isInteger(session.default_limit) && session.default_limit >= 1) {
+        defaultLimit = session.default_limit;
+      }
     } catch (error) {
       banner({ type: "fatal", message: "Could not reach the server: " + error.message });
       return;

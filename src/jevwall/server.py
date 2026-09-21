@@ -66,7 +66,7 @@ def create_app(
 
     @app.get("/session")
     async def get_session() -> dict:
-        return {"token": token}
+        return {"token": token, "default_limit": DEFAULT_LIMIT}
 
     @app.get("/stream")
     async def stream(
