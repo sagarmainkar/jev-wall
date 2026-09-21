@@ -67,9 +67,6 @@ def _split_share(deepset_total: int, jackhhao_total: int, limit: int) -> tuple[i
     jackhhao_take = min(limit - deepset_take, jackhhao_total)
     shortfall = limit - deepset_take - jackhhao_take
     if shortfall > 0:
-        jackhhao_take = min(jackhhao_take + shortfall, jackhhao_total)
-        shortfall = limit - deepset_take - jackhhao_take
-    if shortfall > 0:
         deepset_take = min(deepset_take + shortfall, deepset_total)
     return deepset_take, jackhhao_take
 
@@ -92,4 +89,5 @@ def load_corpus(limit: int | None = None, seed: int = 7) -> list[Record]:
         records = deepset_records + jackhhao_records
         random.Random(seed).shuffle(records)
         return records
+    limit = max(0, limit)
     return _balanced_sample(deepset_records, jackhhao_records, limit, seed)

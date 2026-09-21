@@ -71,6 +71,19 @@ def test_load_corpus_limit_zero_returns_empty(monkeypatch):
     assert corpus.load_corpus(limit=0) == []
 
 
+def test_load_corpus_negative_limit_returns_empty(monkeypatch):
+    monkeypatch.setattr(
+        corpus,
+        "_download",
+        lambda name: [
+            {"text": f"t{i}", "label": i % 2, "prompt": f"p{i}", "type": "benign"}
+            for i in range(10)
+        ],
+    )
+    assert corpus.load_corpus(limit=-1) == []
+    assert corpus.load_corpus(limit=-5) == []
+
+
 def test_limit_is_split_evenly_between_sources(monkeypatch):
     monkeypatch.setattr(corpus, "_download", lambda name: _rows(400))
     records = corpus.load_corpus(limit=300)
