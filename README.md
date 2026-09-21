@@ -2,6 +2,17 @@
 
 A live, visual test of [TypeSafe AI's Jev](https://typesafe.ai) as a prompt-injection guardrail.
 
+<p align="center">
+  <a href="demo/jev-wall-demo.mp4">
+    <img src="demo/jev-wall-demo.gif" width="100%"
+         alt="Jev Wall running: prompts fly into the JEV prism and split into three beams (verdict, technique, severity) while accuracy, ROC and calibration update live; then Step mode walks through single prompts.">
+  </a>
+</p>
+<p align="center">
+  <em>46 seconds, no sound: a live run of 300 prompts, then Step mode one prompt at a time.
+  <a href="demo/jev-wall-demo.mp4">Watch the full-quality video</a>.</em>
+</p>
+
 Jev is a "System One" model: it does not generate text. You hand it some state and a set of typed
 questions, and it returns typed answers with calibrated probabilities, in a few hundred
 milliseconds, for a fraction of a cent. That makes it a natural fit for a guardrail that sits in
@@ -17,8 +28,6 @@ questions about each one in a single call, and three buckets light up:
 Because the prompts come with human labels, the wall also scores Jev as it goes: accuracy,
 precision, recall, a ROC curve, and a calibration plot that checks whether "90% confident" really
 means right nine times in ten. Latency and cost tick up alongside.
-
-<!-- Add a screenshot or GIF of a run here. -->
 
 ## What it measures, and what it does not
 

@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 runs/
 dist/
+
+# original screen recording: too large for GitHub, and shows the browser chrome
+demo/JevWall.mp4
