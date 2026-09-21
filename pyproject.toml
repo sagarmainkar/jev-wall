@@ -3,6 +3,8 @@ name = "jevwall"
 version = "0.1.0"
 description = "A live visual test of TypeSafe AI's Jev model as a prompt-injection guardrail"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Sagar Mainkar", email = "sagar.mainkar@gmail.com" }
 ]

@@ -62,6 +62,15 @@ Open http://127.0.0.1:8000, choose how many prompts to run, and press **Start ru
 threshold slider to see precision and recall trade off; nothing is re-sent to Jev when you do. The
 box at the bottom scores any prompt you type.
 
+**Step mode**
+
+The animation is too fast to follow a single prompt through, which is what you want when you are
+walking someone else through a run. Press **Step** and the wall empties and goes one prompt at a
+time: the first press parks the whole prompt on screen to read, the second sends it through the
+prism and shows the three answers one after another, then the dataset label and whether Jev agreed.
+Right Arrow and Space do the same as the button. Step mode works on a replay, or on a live run once
+it has finished; it never calls the API.
+
 **Headless run**
 
 ```bash
@@ -133,6 +142,12 @@ real API (well under a cent) to confirm your key and the SDK work.
 - [`deepset/prompt-injections`](https://huggingface.co/datasets/deepset/prompt-injections) — Apache 2.0
 - [`jackhhao/jailbreak-classification`](https://huggingface.co/datasets/jackhhao/jailbreak-classification) — Apache 2.0
 
-The technique matrix is loosely informed by [MITRE ATLAS](https://atlas.mitre.org/) and the
-[OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/).
-This project is independent and is not affiliated with TypeSafe AI.
+The technique matrix is a custom taxonomy written for this project. Each tactic column shows the id
+of the closest technique in [MITRE ATLAS](https://atlas.mitre.org/) (v5.6.0) as a pointer for
+readers who know ATLAS; it is not an official ATLAS mapping, and it is not MITRE ATT&CK. The
+[OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
+informed it too. This project is independent and is not affiliated with TypeSafe AI or MITRE.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
