@@ -11,6 +11,26 @@ from jevwall.judge import JudgeError, make_judge
 from jevwall.runner import CostLimitError, run
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="jevwall")
+    sub = parser.add_subparsers(dest="command", required=True)
+    serve = sub.add_parser("serve", help="start the live wall")
+    serve.add_argument("--port", type=int, default=8000)
+    runp = sub.add_parser("run", help="headless run that records a run file")
+    runp.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    runp.add_argument("--full", action="store_true", help="run the whole corpus")
+    runp.add_argument("--max-cost", type=float, default=0.50)
+    exp = sub.add_parser("export", help="write a self-contained replay page")
+    exp.add_argument("--run", default=None, help="run file (default: newest in runs/)")
+    exp.add_argument("--out", default="dist/replay.html")
+    return parser
+
+
+def effective_limit(args: argparse.Namespace) -> int | None:
+    """How many prompts to load: `--full` beats `--limit`, and means the whole corpus."""
+    return None if args.full else args.limit
+
+
 def _serve(args: argparse.Namespace) -> None:
     import uvicorn
 
@@ -21,7 +41,7 @@ def _serve(args: argparse.Namespace) -> None:
 
 
 async def _run(args: argparse.Namespace) -> None:
-    records = load_corpus(None if args.full else args.limit)
+    records = load_corpus(effective_limit(args))
     print(f"{len(records)} prompts")
     judge = make_judge()
     done = errors = 0
@@ -46,18 +66,7 @@ def _export(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="jevwall")
-    sub = parser.add_subparsers(dest="command", required=True)
-    serve = sub.add_parser("serve", help="start the live wall")
-    serve.add_argument("--port", type=int, default=8000)
-    runp = sub.add_parser("run", help="headless run that records a run file")
-    runp.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
-    runp.add_argument("--full", action="store_true", help="run the whole corpus")
-    runp.add_argument("--max-cost", type=float, default=0.50)
-    exp = sub.add_parser("export", help="write a self-contained replay page")
-    exp.add_argument("--run", default=None, help="run file (default: newest in runs/)")
-    exp.add_argument("--out", default="dist/replay.html")
-    args = parser.parse_args()
+    args = build_parser().parse_args()
     try:
         if args.command == "serve":
             _serve(args)
