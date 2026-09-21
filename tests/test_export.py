@@ -45,6 +45,7 @@ def test_export_escapes_html_comment_reopen_and_line_separators(tmp_path):
     assert "<script" not in payload
     assert "\u2028" not in payload
     assert "\u2029" not in payload
+    assert "&" not in payload  # an unescaped & could start an HTML entity when re-parsed
 
 
 def test_export_round_trips_through_json(tmp_path):

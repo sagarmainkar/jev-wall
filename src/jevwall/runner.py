@@ -16,6 +16,7 @@ PRICE_PER_TOKEN = 0.042 / 1_000_000
 QUESTION_TOKENS = 1300
 CHARS_PER_TOKEN = 4
 MIN_START_GAP = 0.06  # seconds between call starts: 1,000/minute, under Jev's 1,200 limit
+TOP_TECHNIQUES = 5  # per-event technique probabilities kept; the full map doubles the run file
 
 
 class CostLimitError(Exception):
@@ -28,6 +29,12 @@ def estimate_tokens(text: str) -> int:
 
 def estimate_cost(records: list[Record]) -> float:
     return sum(estimate_tokens(r.text) for r in records) * PRICE_PER_TOKEN
+
+
+def top_technique_probs(probs: dict[str, float]) -> dict[str, float]:
+    """The `TOP_TECHNIQUES` likeliest techniques, highest first, rounded for a smaller run file."""
+    ranked = sorted(probs.items(), key=lambda item: item[1], reverse=True)
+    return {name: round(p, 4) for name, p in ranked[:TOP_TECHNIQUES]}
 
 
 def make_event(record: Record, verdict: Verdict | None, error: str | None, t: float) -> dict:
@@ -47,7 +54,7 @@ def make_event(record: Record, verdict: Verdict | None, error: str | None, t: fl
         "p_attack": verdict.p_attack if verdict else None,
         "technique": verdict.technique if verdict else None,
         "technique_confidence": verdict.technique_confidence if verdict else None,
-        "technique_probs": verdict.technique_probs if verdict else None,
+        "technique_probs": top_technique_probs(verdict.technique_probs) if verdict else None,
         "severity": verdict.severity if verdict else None,
         "latency_ms": verdict.latency_ms if verdict else None,
         "input_tokens": input_tokens,
@@ -134,7 +141,7 @@ async def run(
                 "taxonomy": taxonomy.as_json(),
                 "price_per_mtok": 0.042,
             }
-            run_file.write_text(json.dumps({"header": header, "events": events}))
+            run_file.write_text(json.dumps({"header": header, "events": events}), encoding="utf-8")
         await asyncio.gather(*workers, return_exceptions=True)
 
     yield {

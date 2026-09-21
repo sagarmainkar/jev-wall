@@ -6,7 +6,7 @@ import pytest
 
 from jevwall.corpus import Record
 from jevwall.judge import JudgeError, Verdict
-from jevwall.runner import CostLimitError, estimate_cost, estimate_tokens, run
+from jevwall.runner import CostLimitError, estimate_cost, estimate_tokens, make_event, run
 
 
 def rec(i, attack=False, text="hello"):
@@ -50,6 +50,19 @@ def test_estimate_tokens_counts_questions_plus_text():
 
 def test_estimate_cost_for_two_thousand_prompts_is_cents():
     assert 0.05 < estimate_cost([rec(i, text="x" * 1600) for i in range(2000)]) < 0.30
+
+
+def test_make_event_keeps_only_the_top_five_technique_probabilities():
+    probs = {f"t{i}": round(i / 100, 6) for i in range(10)}  # t9 highest, t0 lowest
+    verdict = Verdict(0.9, "t9", 0.09, probs, 2.0, 100.0, 1000)
+    event = make_event(rec(0), verdict, None, 1.0)
+    assert list(event["technique_probs"]) == ["t9", "t8", "t7", "t6", "t5"]
+    assert event["technique_probs"]["t9"] == 0.09
+
+
+def test_make_event_rounds_technique_probabilities_to_four_decimals():
+    verdict = Verdict(0.9, "a", 0.5, {"a": 0.123456789, "b": 0.5}, 2.0, 100.0, 1000)
+    assert make_event(rec(0), verdict, None, 1.0)["technique_probs"] == {"b": 0.5, "a": 0.1235}
 
 
 async def test_run_yields_one_event_per_record_then_done(tmp_path):

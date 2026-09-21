@@ -17,7 +17,7 @@ def latest_run(runs_dir: Path = Path("runs")) -> Path:
 
 
 def export(run_file: Path, out: Path = Path("dist/replay.html"), page: Path = PAGE) -> Path:
-    run = json.loads(run_file.read_text())
+    run = json.loads(run_file.read_text(encoding="utf-8"))
     payload = (
         json.dumps(run, ensure_ascii=False)
         .replace("<", "\\u003c")
@@ -26,9 +26,9 @@ def export(run_file: Path, out: Path = Path("dist/replay.html"), page: Path = PA
         .replace(" ", "\\u2028")
         .replace(" ", "\\u2029")
     )
-    html = page.read_text()
+    html = page.read_text(encoding="utf-8")
     if html.count(MARKER) != 1:
         raise ValueError(f"{page} must contain the marker {MARKER} exactly once.")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html.replace(MARKER, payload))
+    out.write_text(html.replace(MARKER, payload), encoding="utf-8")
     return out

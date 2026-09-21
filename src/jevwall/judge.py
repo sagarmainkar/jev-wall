@@ -41,7 +41,10 @@ def load_api_key() -> str:
     load_dotenv(ENV_FILE)
     key = os.environ.get(KEY_VAR, "").strip()
     if not key:
-        raise JudgeError(f"{KEY_VAR} is not set. Add {KEY_VAR}=<your key> to .env and try again.")
+        raise JudgeError(
+            f"{KEY_VAR} is not set. Add {KEY_VAR}=<your key> to {ENV_FILE} "
+            "(run jevwall from the project directory) and try again."
+        )
     return key
 
 
