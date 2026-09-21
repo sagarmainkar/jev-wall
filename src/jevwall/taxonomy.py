@@ -4,6 +4,8 @@
 from dataclasses import asdict, dataclass
 
 NONE_ID = "none"
+# The version of MITRE's published ATLAS data the references below were checked against.
+ATLAS_VERSION = "5.6.0"
 NONE_CRITERIA = (
     "An ordinary request with no attempt to manipulate, override, or probe the assistant."
 )
@@ -21,6 +23,9 @@ class Tactic:
     id: str
     name: str
     techniques: list[Technique]
+    # The closest MITRE ATLAS technique(s), id -> name. This matrix is a custom taxonomy, not an
+    # official ATLAS mapping; the references are a signpost for anyone who knows ATLAS.
+    atlas: dict[str, str]
 
 
 TACTICS: list[Tactic] = [
@@ -54,6 +59,7 @@ TACTICS: list[Tactic] = [
                 "Pretends the original task is already finished so that new instructions follow.",
             ),
         ],
+        {"AML.T0051.000": "LLM Prompt Injection: Direct"},
     ),
     Tactic(
         "persona",
@@ -85,6 +91,7 @@ TACTICS: list[Tactic] = [
                 "Demands the assistant stay in character no matter what and never refuse.",
             ),
         ],
+        {"AML.T0054": "LLM Jailbreak"},
     ),
     Tactic(
         "obfuscation",
@@ -116,6 +123,7 @@ TACTICS: list[Tactic] = [
                 "Buries the instruction inside code, a function, or a variable to be evaluated.",
             ),
         ],
+        {"AML.T0068": "LLM Prompt Obfuscation"},
     ),
     Tactic(
         "extraction",
@@ -142,6 +150,7 @@ TACTICS: list[Tactic] = [
                 "Tries to make the assistant regurgitate training data or private records.",
             ),
         ],
+        {"AML.T0056": "Extract LLM System Prompt", "AML.T0057": "LLM Data Leakage"},
     ),
     Tactic(
         "pressure",
@@ -173,6 +182,7 @@ TACTICS: list[Tactic] = [
                 "Offers points, tokens, or rewards for answering without refusing.",
             ),
         ],
+        {"AML.T0054": "LLM Jailbreak"},
     ),
     Tactic(
         "indirect",
@@ -199,6 +209,10 @@ TACTICS: list[Tactic] = [
                 "Builds up a harmful result through a sequence of individually harmless steps.",
             ),
         ],
+        {
+            "AML.T0051.001": "LLM Prompt Injection: Indirect",
+            "AML.T0053": "AI Agent Tool Invocation",
+        },
     ),
 ]
 
