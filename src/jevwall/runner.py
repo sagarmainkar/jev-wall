@@ -31,6 +31,13 @@ def estimate_cost(records: list[Record]) -> float:
 
 
 def make_event(record: Record, verdict: Verdict | None, error: str | None, t: float) -> dict:
+    tokens_estimated = verdict is not None and verdict.input_tokens is None
+    if verdict is None:
+        input_tokens = 0
+    elif verdict.input_tokens is None:
+        input_tokens = estimate_tokens(record.text)
+    else:
+        input_tokens = verdict.input_tokens
     return {
         "id": record.id,
         "source": record.source,
@@ -43,8 +50,8 @@ def make_event(record: Record, verdict: Verdict | None, error: str | None, t: fl
         "technique_probs": verdict.technique_probs if verdict else None,
         "severity": verdict.severity if verdict else None,
         "latency_ms": verdict.latency_ms if verdict else None,
-        "input_tokens": (verdict.input_tokens or estimate_tokens(record.text)) if verdict else 0,
-        "tokens_estimated": bool(verdict) and verdict.input_tokens is None,
+        "input_tokens": input_tokens,
+        "tokens_estimated": tokens_estimated,
         "t": round(t, 3),
         "error": error,
     }
@@ -82,6 +89,9 @@ async def run(
                 if wait > 0:
                     await asyncio.sleep(wait)
                 state["last_start"] = time.perf_counter()
+            if state["cost"] > max_cost:
+                state["stopped_early"] = True
+                return
             try:
                 verdict, error = await judge.judge(record.text), None
             except JudgeError as exc:
@@ -104,9 +114,16 @@ async def run(
         for w in workers:
             w.result()
     finally:
+        # Everything up to the single `await` below is synchronous, so a cancelled or
+        # disconnected consumer (whose cancel scope re-raises on every await, as anyio's
+        # does) cannot interrupt it: cancellation is only *requested* here, not awaited;
+        # any verdict a worker already finished and queued - but that was never yielded,
+        # because the consumer went away first - is drained and saved too; and the run
+        # file is written before we ever hand control back to the event loop.
         for w in workers:
             w.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
+        while not queue.empty():
+            events.append(queue.get_nowait())
         if events:
             runs_dir.mkdir(parents=True, exist_ok=True)
             run_file = runs_dir / f"{started_at:%Y%m%d-%H%M%S}.json"
@@ -118,6 +135,7 @@ async def run(
                 "price_per_mtok": 0.042,
             }
             run_file.write_text(json.dumps({"header": header, "events": events}))
+        await asyncio.gather(*workers, return_exceptions=True)
 
     yield {
         "type": "done",
