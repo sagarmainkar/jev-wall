@@ -357,18 +357,34 @@ main {
 
 .col { display: grid; grid-template-rows: auto repeat(5, minmax(0, 1fr)); gap: 5px; min-width: 0; }
 
+.chead { min-width: 0; padding-bottom: 3px; border-bottom: 1px solid var(--line); }
+
 .col h3 {
   margin: 0;
   font-size: 10.5px;
   font-weight: 600;
   color: var(--mid);
   letter-spacing: .01em;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--line);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The closest MITRE ATLAS technique for the column. Reference, not a claim of equivalence. */
+.atlas { display: flex; flex-wrap: wrap; gap: 3px 7px; margin-top: 2px; }
+
+.atlas a {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(99,113,143,.6);
+}
+
+.atlas a:hover { color: var(--technique); border-bottom-color: var(--technique); }
+
+#matrix .cap { display: flex; justify-content: space-between; gap: 12px; }
+#matrix .cap em { font-style: normal; color: #55617c; text-align: right; }
 
 .cell {
   position: relative;
@@ -436,6 +452,120 @@ main {
 
 #cell-none b { font-family: var(--mono); font-weight: 600; color: var(--text); margin-left: 7px; }
 #cell-none.flash { background: rgba(147,161,191,.22); border-color: var(--mid); color: var(--text); }
+
+/* ---------- step mode: reading card, callouts, reveal ---------- */
+
+/* The reading card is the thing an audience reads off a recording, so it is sized for that:
+   a wide measure, mono at nearly twice the lane-card size, and room to scroll a long prompt. */
+#step-card {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 12px;
+  width: min(780px, 80%);
+  max-height: 45%;
+  transform: translate(-50%, 0);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 13px 18px 16px;
+  border: 1px solid rgba(255,209,102,.34);
+  border-left: 3px solid var(--jev);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #111c31, #090f1d);
+  box-shadow: 0 28px 74px rgba(0,0,0,.72);
+  will-change: transform, opacity;
+}
+
+#step-card .head { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; }
+
+#step-card .src {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--jev);
+}
+
+#step-card .seq { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+/* A prompt too long for the card fades out at the bottom edge, so it is obvious there is more. */
+#step-card.scrolls::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 1px;
+  bottom: 1px;
+  height: 44px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(180deg, rgba(9,15,29,0), #090f1d 74%);
+  pointer-events: none;
+}
+
+#step-card .body {
+  font-family: var(--mono);
+  font-size: 15.5px;
+  line-height: 1.62;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.step-callout {
+  position: absolute;
+  z-index: 5;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 6px 11px;
+  border-radius: 3px;
+  color: var(--tone);
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  background: color-mix(in srgb, var(--tone) 15%, #060b14);
+  box-shadow: 0 10px 26px rgba(0,0,0,.66);
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none;
+}
+
+.step-callout.on { opacity: 1; transform: translateY(0); }
+
+#step-reveal {
+  position: absolute;
+  z-index: 5;
+  right: 10px;
+  bottom: 62px;
+  display: flex;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--mid);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #070d18;
+  box-shadow: 0 16px 42px rgba(0,0,0,.7);
+  white-space: nowrap;
+}
+
+#step-reveal > * { padding: 8px 15px; }
+#step-reveal > * + * { border-left: 1px solid var(--line); }
+#step-reveal b { font-weight: 600; color: var(--text); }
+#step-reveal .agree { color: var(--allowed); }
+#step-reveal .disagree { color: var(--jev); }
+
+#step-toggle[aria-pressed="true"] {
+  border-color: rgba(255,209,102,.6);
+  background: rgba(255,209,102,.1);
+  color: var(--jev);
+}
+
+button[hidden] { display: none; }
 
 /* ---------- last prompt ---------- */
 
@@ -671,6 +801,8 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 
 @media (prefers-reduced-motion: reduce) {
   .cell.hit, .cell.unsure, .mark.show { animation: none; }
+  .step-callout { transition: opacity .2s ease; transform: none; }
+  .step-callout.on { transform: none; }
 }
 </style>
 </head>
@@ -927,8 +1059,16 @@ function buildMatrix(tactics) {
   const cap = document.createElement("div");
   cap.className = "cap";
   cap.style.marginBottom = "7px";
-  cap.textContent = "Technique — " + tactics.length + " tactics, " +
+  const capTitle = document.createElement("span");
+  capTitle.textContent = "Technique — " + tactics.length + " tactics, " +
     tactics.reduce((n, t) => n + t.techniques.length, 0) + " techniques";
+  cap.append(capTitle);
+  // Run files recorded before the references existed have no `atlas` key: say nothing then.
+  if (tactics.some((t) => t.atlas && Object.keys(t.atlas).length > 0)) {
+    const note = document.createElement("em");
+    note.textContent = "Custom taxonomy · ATLAS ids show the closest MITRE ATLAS technique";
+    cap.append(note);
+  }
   root.append(cap);
 
   const grid = document.createElement("div");
@@ -936,10 +1076,28 @@ function buildMatrix(tactics) {
   for (const tactic of tactics) {
     const col = document.createElement("div");
     col.className = "col";
+    const chead = document.createElement("div");
+    chead.className = "chead";
     const head = document.createElement("h3");
     head.textContent = tactic.name;
     head.title = tactic.name;
-    col.append(head);
+    chead.append(head);
+    const atlas = tactic.atlas || {};
+    if (Object.keys(atlas).length > 0) {
+      const refs = document.createElement("div");
+      refs.className = "atlas";
+      for (const [id, atlasName] of Object.entries(atlas)) {
+        const link = document.createElement("a");
+        link.textContent = id;
+        link.setAttribute("href", "https://atlas.mitre.org/techniques/" + id);
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener");
+        link.setAttribute("title", atlasName);
+        refs.append(link);
+      }
+      chead.append(refs);
+    }
+    col.append(chead);
     for (const technique of tactic.techniques) {
       const cell = document.createElement("div");
       cell.className = "cell";
@@ -1107,39 +1265,52 @@ function flash(el, hold = 620) {
   setTimeout(() => el.classList.remove("flash"), hold);
 }
 
-// `animate: false` is the over-cap path: the event's counts are already in `state`, so nothing has
-// to happen here at all. No beams, no flashes, no forced layouts — the wall keeps up instead.
-function land(e, { animate = true } = {}) {
-  if (!animate) return;
+// The three answers land independently, so each one is its own function: normal playback fires all
+// three at once, step mode fires them one after another. Each returns the element it lit, which is
+// what step mode anchors its callout to.
+function landVerdict(e) {
   const flagged = e.p_attack >= state.threshold;
-  const verdictCell = $(flagged ? "b-blocked" : "b-allowed");
-  const known = cells.has(e.technique) && e.technique !== "none";
-  const techniqueCell = known ? cells.get(e.technique) : cells.get("none");
-  const severityCell = $("sev-" + sevBucket(e.severity));
-
-  if (!REDUCED) {
-    beam(verdictCell, flagged ? "#ff4d6d" : "#4fbfff");
-    beam(techniqueCell, "#a97bff");
-    beam(severityCell, SEVERITY_HEX[sevBucket(e.severity)]);
-  }
-
-  flash(verdictCell);
-  flash(severityCell);
-  if (!known) {
-    flash(cells.get("none"));
-  } else if (techniqueCell) {
-    techniqueCell.classList.remove("hit", "unsure");
-    void techniqueCell.offsetWidth;
-    techniqueCell.classList.add("hit");
-    if (e.technique_confidence < 0.5) techniqueCell.classList.add("unsure");
-  }
-
+  const cell = $(flagged ? "b-blocked" : "b-allowed");
+  if (!REDUCED) beam(cell, flagged ? "#ff4d6d" : "#4fbfff");
+  flash(cell);
   if (flagged !== e.truth) {
     const mark = $(flagged ? "mark-blocked" : "mark-allowed");
     mark.classList.remove("show");
     void mark.offsetWidth;
     mark.classList.add("show");
   }
+  return cell;
+}
+
+function landTechnique(e) {
+  const known = cells.has(e.technique) && e.technique !== "none";
+  const cell = known ? cells.get(e.technique) : cells.get("none");
+  if (!REDUCED) beam(cell, "#a97bff");
+  if (!known) {
+    flash(cells.get("none"));
+  } else if (cell) {
+    cell.classList.remove("hit", "unsure");
+    void cell.offsetWidth;
+    cell.classList.add("hit");
+    if (e.technique_confidence < 0.5) cell.classList.add("unsure");
+  }
+  return cell;
+}
+
+function landSeverity(e) {
+  const cell = $("sev-" + sevBucket(e.severity));
+  if (!REDUCED) beam(cell, SEVERITY_HEX[sevBucket(e.severity)]);
+  flash(cell);
+  return cell;
+}
+
+// `animate: false` is the over-cap path: the event's counts are already in `state`, so nothing has
+// to happen here at all. No beams, no flashes, no forced layouts — the wall keeps up instead.
+function land(e, { animate = true } = {}) {
+  if (!animate) return;
+  landVerdict(e);
+  landTechnique(e);
+  landSeverity(e);
 }
 
 function fly(e) {
@@ -1198,6 +1369,7 @@ function clearStage() {
   }
   flights.clear();
   track = 0;
+  clearStepStage();
 }
 
 function showLast(e) {
@@ -1469,7 +1641,7 @@ function render() {
   drawReliability(events);
 }
 
-function ingest(e) {
+function ingest(e, { stage = true } = {}) {
   if (e.error) {
     state.errors++;
     state.events.push(e);
@@ -1494,6 +1666,12 @@ function ingest(e) {
   state.techniqueSamples.set(bucket, samples.slice(0, 5));
 
   showLast(e);
+  // `stage: false` is step mode: it has already flown the card and fired the beams by hand, and
+  // only calls in here to fold the event into the counts.
+  if (!stage) {
+    scheduleRender();
+    return;
+  }
   if (REDUCED) land(e);
   else if (flights.size >= MAX_FLIGHTS) land(e, { animate: false });
   else fly(e);
@@ -1523,6 +1701,24 @@ function errorNote() {
     : state.errors + " prompts errored — excluded from every metric";
 }
 
+// Back to an empty wall: the stage, every count, every chart. Shared by "Replay again" and by
+// entering step mode, so the numbers build up from zero as you step.
+function resetRun() {
+  clearStage();
+  state.events = []; state.errors = 0; state.tokens = 0; state.estimated = false;
+  state.techniqueCounts.clear(); state.techniqueSamples.clear(); state.noneCount = 0;
+  $("banner").classList.remove("on");
+  errorNote();
+  setText($("last-text"), "Waiting for the first prompt.");
+  setText($("last-p"), "—");
+  $("last-p").style.color = "";
+  setText($("last-tech"), "—");
+  const sevEl = $("last-sev");
+  setText(sevEl, "—");
+  sevEl.style.color = "";
+  scheduleRender();
+}
+
 function banner(payload, bad) {
   const el = $("banner");
   el.classList.add("on");
@@ -1539,7 +1735,304 @@ function banner(payload, bad) {
 }
 
 /* ========================================================================
-   10. LIVE MODE
+   10. STEP MODE  (walk one prompt at a time: read it, then watch Jev answer)
+   ======================================================================== */
+
+// Deliberately slow: these are the beats of a screen recording, not of the wall at speed.
+const SLIDE_MS = 1400;    // the reading card slides in
+const SHRINK_MS = 500;    // and shrinks into the prism
+const SLOT_MS = 700;      // one beam and its callout
+const CALLOUT_MS = 420;   // the callout appears as the beam lands
+
+const step = {
+  on: false,
+  index: 0,          // the event the next "Next prompt" will show
+  read: false,       // a card is parked and "Ask Jev" is the next action
+  busy: false,       // an animation owns the stage; clicks are ignored
+  timers: new Set(),
+  card: null,
+};
+
+function stepTimer(fn, delay) {
+  const id = setTimeout(() => { step.timers.delete(id); fn(); }, delay);
+  step.timers.add(id);
+}
+
+// Every timer and animation step mode starts is cancelled here, so `clearStage()` leaves a truly
+// empty stage whatever step mode was in the middle of.
+function clearStepStage() {
+  for (const id of step.timers) clearTimeout(id);
+  step.timers.clear();
+  if (step.card) {
+    for (const animation of step.card.getAnimations()) {
+      animation.onfinish = null;
+      animation.oncancel = null;
+      animation.cancel();
+    }
+    step.card = null;
+  }
+  for (const node of document.querySelectorAll("#step-card, .step-callout, #step-reveal")) {
+    node.remove();
+  }
+  step.read = false;
+  step.busy = false;
+}
+
+function stepCard(e, position, total) {
+  const card = document.createElement("div");
+  card.id = "step-card";
+  const head = document.createElement("div");
+  head.className = "head";
+  const src = document.createElement("span");
+  src.className = "src";
+  src.textContent = e.source;
+  const seq = document.createElement("span");
+  seq.className = "seq";
+  seq.textContent = "prompt " + position + " of " + total;
+  head.append(src, seq);
+  const body = document.createElement("div");
+  body.className = "body";
+  body.textContent = e.text.trim();
+  card.append(head, body);
+  $("stagewrap").append(card);
+  if (body.scrollHeight > body.clientHeight + 2) card.classList.add("scrolls");
+  step.card = card;
+  return card;
+}
+
+// A callout has to be unmistakably attached to the thing it describes. When the target is tall
+// enough to hold it, the callout sits inside the target's lower edge; otherwise it sits beside it,
+// on the same line. Either way it is never allowed to land on a callout that is already up.
+function stepCallout(target, text, colour) {
+  if (!target) return;
+  const wrap = $("stagewrap");
+  const el = document.createElement("div");
+  el.className = "step-callout";
+  el.style.setProperty("--tone", colour);
+  el.textContent = text;
+  wrap.append(el);
+
+  const bounds = wrap.getBoundingClientRect();
+  const r = target.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  let x, y;
+  if (r.height >= h + 16) {
+    x = r.left - bounds.left + r.width / 2 - w / 2;
+    y = r.bottom - bounds.top - h - 9;
+  } else {
+    y = r.top - bounds.top + r.height / 2 - h / 2;
+    x = r.right - bounds.left + 10;
+    if (x + w > bounds.width - 6) x = r.left - bounds.left - w - 10;
+  }
+  x = Math.max(6, Math.min(x, bounds.width - w - 6));
+  for (const other of wrap.querySelectorAll(".step-callout")) {
+    if (other === el) continue;
+    const o = other.getBoundingClientRect();
+    const ox = o.left - bounds.left, oy = o.top - bounds.top;
+    if (x < ox + o.width + 8 && x + w + 8 > ox && y < oy + o.height + 8 && y + h + 8 > oy) {
+      y = oy + o.height + 10;
+    }
+  }
+  y = Math.max(6, Math.min(y, bounds.height - h - 6));
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+  requestAnimationFrame(() => el.classList.add("on"));
+}
+
+function stepRevealStrip(e) {
+  const agreed = (e.p_attack >= state.threshold) === e.truth;
+  const el = document.createElement("div");
+  el.id = "step-reveal";
+  const label = document.createElement("div");
+  label.append(document.createTextNode("Dataset label: "));
+  const truth = document.createElement("b");
+  truth.textContent = e.truth ? "attack" : "benign";
+  label.append(truth);
+  const call = document.createElement("div");
+  call.className = agreed ? "agree" : "disagree";
+  call.textContent = agreed ? "Jev agreed ✓" : "Jev disagreed ✗";
+  const latency = document.createElement("div");
+  latency.textContent = ms(e.latency_ms);
+  el.append(label, call, latency);
+  $("stagewrap").append(el);
+}
+
+const verdictText = (e) =>
+  "p_attack " + e.p_attack.toFixed(2) + " → " +
+  (e.p_attack >= state.threshold ? "BLOCKED" : "ALLOWED");
+
+const techniqueText = (e) =>
+  cells.has(e.technique) && e.technique !== "none"
+    ? names.get(e.technique) + " · " + Math.round(e.technique_confidence * 100) + "% sure"
+    : "No technique";
+
+const severityText = (e) =>
+  e.severity.toFixed(1) + " · " + SEVERITY_WORDS[sevBucket(e.severity)];
+
+// `control` is how the two modes differ: replay pauses and resumes its clock, live has no
+// playback to pause and simply hands over the events it already received.
+function setupStep(control) {
+  const controls = $("controls");
+  const toggle = document.createElement("button");
+  toggle.id = "step-toggle";
+  toggle.type = "button";
+  toggle.className = "ghost";
+  toggle.textContent = "Step";
+  toggle.title = "Walk through the run one prompt at a time";
+  toggle.setAttribute("aria-pressed", "false");
+  const next = document.createElement("button");
+  next.id = "step-next";
+  next.type = "button";
+  next.hidden = true;
+  controls.append(toggle, next);
+
+  const events = () => control.events();
+  const atEnd = () => step.index >= events().length;
+
+  function label(text, disabled) {
+    next.textContent = text;
+    next.disabled = disabled;
+  }
+
+  // An errored prompt has nothing to read and nothing to answer, so stepping walks past it. It
+  // still goes into state, which is what keeps the error count honest.
+  function skipErrors() {
+    const list = events();
+    while (step.index < list.length && list[step.index].error) {
+      ingest(list[step.index], { stage: false });
+      step.index++;
+    }
+  }
+
+  function ready() {
+    skipErrors();
+    if (atEnd()) label("End of run", true);
+    else label("Next prompt", false);
+  }
+
+  function showCard() {
+    for (const node of $("stagewrap").querySelectorAll(".step-callout, #step-reveal")) {
+      node.remove();
+    }
+    const list = events();
+    const card = stepCard(list[step.index], step.index + 1, list.length);
+    step.read = true;
+    if (REDUCED) { label("Ask Jev", false); return; }
+    step.busy = true;
+    label("Ask Jev", true);
+    const run = card.animate(
+      [{ transform: "translate(-50%,0) translateX(-64vw)", opacity: 0 },
+       { transform: "translate(-50%,0) translateX(0)", opacity: 1 }],
+      { duration: SLIDE_MS, easing: "cubic-bezier(.16,1,.3,1)" },
+    );
+    run.onfinish = () => { step.busy = false; label("Ask Jev", false); };
+  }
+
+  function askJev() {
+    const e = events()[step.index];
+    const verdictColour = e.p_attack >= state.threshold ? "#ff4d6d" : "#4fbfff";
+    const severityColour = SEVERITY_HEX[sevBucket(e.severity)];
+
+    // Only now does the event reach state: the buckets, matrix, charts and stats move on the
+    // reveal, not while the audience is still reading.
+    const finish = () => {
+      stepRevealStrip(e);
+      ingest(e, { stage: false });
+      step.index++;
+      step.read = false;
+      step.busy = false;
+      ready();
+    };
+
+    step.busy = true;
+    label("Ask Jev", true);
+
+    if (REDUCED) {
+      if (step.card) { step.card.remove(); step.card = null; }
+      stepCallout(landVerdict(e), verdictText(e), verdictColour);
+      stepCallout(landTechnique(e), techniqueText(e), "#a97bff");
+      stepCallout(landSeverity(e), severityText(e), severityColour);
+      finish();
+      return;
+    }
+
+    const card = step.card;
+    if (card) {
+      const r = card.getBoundingClientRect();
+      const p = $("prism").getBoundingClientRect();
+      const dx = p.left + p.width / 2 - (r.left + r.width / 2);
+      const dy = p.top + p.height / 2 - (r.top + r.height / 2);
+      const run = card.animate(
+        [{ transform: "translate(-50%,0)", opacity: 1 },
+         { transform: `translate(-50%,0) translate(${dx}px,${dy}px) scale(.06)`, opacity: 0 }],
+        { duration: SHRINK_MS, easing: "cubic-bezier(.5,0,.85,.4)", fill: "forwards" },
+      );
+      run.onfinish = () => { card.remove(); if (step.card === card) step.card = null; };
+    }
+
+    const fire = (at, landOne, text, colour) => stepTimer(() => {
+      const target = landOne(e);
+      stepTimer(() => stepCallout(target, text, colour), CALLOUT_MS);
+    }, at);
+
+    fire(SHRINK_MS, landVerdict, verdictText(e), verdictColour);
+    fire(SHRINK_MS + SLOT_MS, landTechnique, techniqueText(e), "#a97bff");
+    fire(SHRINK_MS + 2 * SLOT_MS, landSeverity, severityText(e), severityColour);
+    stepTimer(finish, SHRINK_MS + 3 * SLOT_MS);
+  }
+
+  function enter() {
+    control.pause();
+    step.on = true;
+    toggle.setAttribute("aria-pressed", "true");
+    next.hidden = false;
+    resetRun();
+    step.index = 0;
+    ready();
+  }
+
+  function leave() {
+    step.on = false;
+    toggle.setAttribute("aria-pressed", "false");
+    next.hidden = true;
+    clearStage();   // a beam may still be in flight, so clear the whole stage, not just the card
+    control.resume(step.index);
+  }
+
+  toggle.onclick = () => { if (step.on) leave(); else enter(); };
+
+  next.onclick = () => {
+    if (!step.on || step.busy || next.disabled) return;
+    if (step.read) askJev();
+    else if (!atEnd()) showCard();
+  };
+
+  document.addEventListener("keydown", (event) => {
+    if (!step.on) return;
+    if (event.key !== "ArrowRight" && event.key !== " " && event.key !== "Spacebar") return;
+    const focused = document.activeElement;
+    const tag = focused ? focused.tagName : "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (focused && focused.isContentEditable) return;
+    if (focused && focused.id === "step-toggle") return;   // Space still toggles step mode off
+    if (event.key !== "ArrowRight") event.preventDefault();  // …and does not scroll the page
+    next.click();
+  });
+
+  toggle.disabled = true;
+
+  return {
+    isOn: () => step.on,
+    restart() { step.index = 0; ready(); },
+    setAvailable(value) {
+      if (!value && step.on) leave();
+      toggle.disabled = !value;
+    },
+  };
+}
+
+/* ========================================================================
+   11. LIVE MODE
    ======================================================================== */
 
 function setupLive() {
@@ -1570,7 +2063,18 @@ function setupLive() {
   startButton.id = "start";
   startButton.textContent = "Start run";
 
-  controls.append(label, fullLabel, startButton, limitMessage);
+  controls.append(label, fullLabel, startButton);
+
+  // Live mode may only step through a run that has already finished, over the events it received.
+  // It never reopens the stream: `events` is a snapshot, because entering step mode empties state.
+  let received = [];
+  const stepApi = setupStep({
+    events: () => received,
+    pause() {},
+    resume() {},
+  });
+
+  controls.append(limitMessage);
 
   full.addEventListener("change", () => {
     limitInput.disabled = full.checked;
@@ -1592,6 +2096,7 @@ function setupLive() {
     }
     startButton.disabled = true;
     startButton.textContent = "Running…";
+    stepApi.setAvailable(false);
     const source = new EventSource(
       "/stream?" + query + "&token=" + encodeURIComponent(sessionToken)
     );
@@ -1602,7 +2107,15 @@ function setupLive() {
     };
     source.onmessage = (m) => {
       const e = JSON.parse(m.data);
-      if (e.type === "done" || e.type === "fatal") { stop("Start run"); banner(e); return; }
+      if (e.type === "done" || e.type === "fatal") {
+        stop("Start run");
+        banner(e);
+        if (e.type === "done") {
+          received = state.events.slice();
+          stepApi.setAvailable(received.length > 0);
+        }
+        return;
+      }
       ingest(e);
     };
     // Closing the EventSource only stops this browser listening; the server-side run may still be
@@ -1617,11 +2130,13 @@ function setupLive() {
 }
 
 /* ========================================================================
-   11. REPLAY MODE
+   12. REPLAY MODE
    ======================================================================== */
 
 function setupReplay() {
   const controls = $("controls");
+  let index = 0, clock = 0, speed = 1, playing = true, last = performance.now(), running = false;
+
   const playButton = document.createElement("button");
   playButton.id = "play";
   playButton.textContent = "Pause";
@@ -1639,9 +2154,30 @@ function setupReplay() {
   const note = document.createElement("span");
   note.className = "cap";
   note.textContent = "recorded run · no API calls";
-  controls.append(playButton, speedSelect, again, note);
+  controls.append(playButton, speedSelect, again);
 
-  let index = 0, clock = 0, speed = 1, playing = true, last = performance.now(), running = false;
+  const stepApi = setupStep({
+    events: () => RUN.events,
+    pause() {
+      playing = false;
+      playButton.disabled = true;
+      speedSelect.disabled = true;
+    },
+    // Normal playback picks up exactly where the stepping got to.
+    resume(at) {
+      index = at;
+      clock = at > 0 ? RUN.events[at - 1].t : 0;
+      speedSelect.disabled = false;
+      playing = true;
+      playButton.disabled = false;
+      playButton.textContent = "Pause";
+      last = performance.now();
+      start();
+    },
+  });
+  stepApi.setAvailable(true);
+
+  controls.append(note);
   speedSelect.value = "1";
 
   function frame(now) {
@@ -1672,20 +2208,15 @@ function setupReplay() {
   speedSelect.onchange = () => { speed = Number(speedSelect.value); };
   again.onclick = () => {
     index = 0; clock = 0;
-    clearStage();
-    state.events = []; state.errors = 0; state.tokens = 0; state.estimated = false;
-    state.techniqueCounts.clear(); state.techniqueSamples.clear(); state.noneCount = 0;
-    $("banner").classList.remove("on");
-    errorNote();
-    setText($("last-text"), "Waiting for the first prompt.");
-    scheduleRender();
+    resetRun();
+    if (stepApi.isOn()) { stepApi.restart(); return; }
     start();
   };
   start();
 }
 
 /* ========================================================================
-   12. TRY YOUR OWN (live only)
+   13. TRY YOUR OWN (live only)
    ======================================================================== */
 
 function setupTry() {
@@ -1767,7 +2298,7 @@ function showJudged(verdict) {
 }
 
 /* ========================================================================
-   13. BOOT
+   14. BOOT
    ======================================================================== */
 
 async function getJson(path) {
