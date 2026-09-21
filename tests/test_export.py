@@ -71,3 +71,31 @@ def test_latest_run_picks_newest_name_and_errors_when_empty(tmp_path):
     (tmp_path / "20260921-100000.json").write_text("{}")
     (tmp_path / "20260921-110000.json").write_text("{}")
     assert latest_run(tmp_path).name == "20260921-110000.json"
+
+
+def test_export_adds_atlas_references_to_runs_recorded_before_they_existed(tmp_path):
+    old_run = {
+        "header": {
+            "taxonomy": [{"id": "override", "name": "Instruction Override", "techniques": []}]
+        },
+        "events": [],
+    }
+    run_file = tmp_path / "old.json"
+    run_file.write_text(json.dumps(old_run))
+    html = export(run_file, tmp_path / "replay.html").read_text()
+    tactic = json.loads(_payload_region(html))["header"]["taxonomy"][0]
+    assert tactic["atlas"] == {"AML.T0051.000": "LLM Prompt Injection: Direct"}
+    assert json.loads(run_file.read_text()) == old_run  # the recorded run itself is untouched
+
+
+def test_export_keeps_atlas_references_a_run_already_has(tmp_path):
+    run = {
+        "header": {"taxonomy": [{"id": "override", "atlas": {"AML.T9999": "Kept"}}]},
+        "events": [],
+    }
+    run_file = tmp_path / "new.json"
+    run_file.write_text(json.dumps(run))
+    html = export(run_file, tmp_path / "replay.html").read_text()
+    assert json.loads(_payload_region(html))["header"]["taxonomy"][0]["atlas"] == {
+        "AML.T9999": "Kept"
+    }
