@@ -559,11 +559,12 @@ main {
 #step-reveal .agree { color: var(--allowed); }
 #step-reveal .disagree { color: var(--jev); }
 
-#step-toggle[aria-pressed="true"] {
-  border-color: rgba(255,209,102,.6);
-  background: rgba(255,209,102,.1);
-  color: var(--jev);
-}
+/* Real-time | Step: one switch, two segments. */
+#mode-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+#mode-switch button.ghost { border: 0; border-radius: 0; color: var(--mid); }
+#mode-switch button.ghost + button.ghost { border-left: 1px solid var(--line); }
+#mode-switch button[aria-pressed="true"] { background: rgba(255,209,102,.12); color: var(--jev); }
+#mode-switch button:disabled { opacity: .45; cursor: not-allowed; }
 
 button[hidden] { display: none; }
 
@@ -1873,18 +1874,28 @@ const severityText = (e) =>
 // playback to pause and simply hands over the events it already received.
 function setupStep(control) {
   const controls = $("controls");
-  const toggle = document.createElement("button");
-  toggle.id = "step-toggle";
-  toggle.type = "button";
-  toggle.className = "ghost";
-  toggle.textContent = "Step";
-  toggle.title = "Walk through the run one prompt at a time";
-  toggle.setAttribute("aria-pressed", "false");
+  const segment = (id, text, title, pressed) => {
+    const button = document.createElement("button");
+    button.id = id;
+    button.type = "button";
+    button.className = "ghost";
+    button.textContent = text;
+    button.title = title;
+    button.setAttribute("aria-pressed", pressed ? "true" : "false");
+    return button;
+  };
+  const realtime = segment("mode-realtime", "Real-time", "Play the run as it happened", true);
+  const toggle = segment("step-toggle", "Step", "Walk through the run one prompt at a time", false);
+  const modeSwitch = document.createElement("div");
+  modeSwitch.id = "mode-switch";
+  modeSwitch.setAttribute("role", "group");
+  modeSwitch.setAttribute("aria-label", "Playback mode");
+  modeSwitch.append(realtime, toggle);
   const next = document.createElement("button");
   next.id = "step-next";
   next.type = "button";
   next.hidden = true;
-  controls.append(toggle, next);
+  controls.append(modeSwitch, next);
 
   const events = () => control.events();
   const atEnd = () => step.index >= events().length;
@@ -1985,6 +1996,7 @@ function setupStep(control) {
     control.pause();
     step.on = true;
     toggle.setAttribute("aria-pressed", "true");
+    realtime.setAttribute("aria-pressed", "false");
     next.hidden = false;
     resetRun();
     step.index = 0;
@@ -1994,12 +2006,14 @@ function setupStep(control) {
   function leave() {
     step.on = false;
     toggle.setAttribute("aria-pressed", "false");
+    realtime.setAttribute("aria-pressed", "true");
     next.hidden = true;
     clearStage();   // a beam may still be in flight, so clear the whole stage, not just the card
     control.resume(step.index);
   }
 
-  toggle.onclick = () => { if (step.on) leave(); else enter(); };
+  toggle.onclick = () => { if (!step.on) enter(); };
+  realtime.onclick = () => { if (step.on) leave(); };
 
   next.onclick = () => {
     if (!step.on || step.busy || next.disabled) return;
@@ -2014,7 +2028,7 @@ function setupStep(control) {
     const tag = focused ? focused.tagName : "";
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     if (focused && focused.isContentEditable) return;
-    if (focused && focused.id === "step-toggle") return;   // Space still toggles step mode off
+    if (focused && modeSwitch.contains(focused)) return;   // Space on the switch changes the mode
     if (event.key !== "ArrowRight") event.preventDefault();  // …and does not scroll the page
     next.click();
   });
@@ -2027,6 +2041,9 @@ function setupStep(control) {
     setAvailable(value) {
       if (!value && step.on) leave();
       toggle.disabled = !value;
+      toggle.title = value
+        ? "Walk through the run one prompt at a time"
+        : "Available once a run has finished";
     },
   };
 }
