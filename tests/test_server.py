@@ -1,5 +1,7 @@
+import asyncio
 import json
 
+import httpx
 from fastapi.testclient import TestClient
 
 from jevwall.corpus import Record
@@ -34,11 +36,15 @@ def recording_records(seen):
     return load
 
 
-def client(tmp_path, monkeypatch, load=records, token="test-token", **kwargs):
+def client(tmp_path, monkeypatch, load=records, token="test-token", max_cost=0.50, **kwargs):
     monkeypatch.chdir(tmp_path)  # run files land in tmp_path/runs
-    c = TestClient(create_app(FakeJudge(**kwargs), load=load, token=token))
+    c = TestClient(create_app(FakeJudge(**kwargs), load=load, token=token, max_cost=max_cost))
     c.headers["X-Jevwall-Token"] = token
     return c
+
+
+def sse_messages(text):
+    return [json.loads(line[6:]) for line in text.splitlines() if line.startswith("data: ")]
 
 
 def test_index_serves_page_with_live_marker(tmp_path, monkeypatch):
@@ -62,12 +68,92 @@ def test_stream_sends_events_then_done(tmp_path, monkeypatch):
 
 
 def test_stream_reports_cost_limit_as_fatal(tmp_path, monkeypatch):
-    response = client(tmp_path, monkeypatch).get("/stream?max_cost=0.0000001&token=test-token")
-    messages = [
-        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
-    ]
+    response = client(tmp_path, monkeypatch, max_cost=0.0000001).get("/stream?token=test-token")
+    messages = sse_messages(response.text)
     assert messages == [{"type": "fatal", "message": messages[0]["message"]}]
     assert "max-cost" in messages[0]["message"]
+
+
+def test_stream_ignores_a_client_supplied_max_cost(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch, max_cost=0.0000001).get(
+        "/stream?token=test-token&max_cost=1000"
+    )
+    messages = sse_messages(response.text)
+    assert messages == [{"type": "fatal", "message": messages[0]["message"]}]
+    assert "max-cost" in messages[0]["message"]
+
+
+def test_stream_reports_an_unexpected_failure_as_fatal(tmp_path, monkeypatch):
+    def boom(limit=None):
+        raise RuntimeError("boom")
+
+    response = client(tmp_path, monkeypatch, load=boom).get("/stream?token=test-token")
+    assert sse_messages(response.text) == [{"type": "fatal", "message": "Run failed: boom"}]
+
+
+def test_stream_with_non_ascii_token_is_forbidden_not_a_server_error(tmp_path, monkeypatch):
+    response = client(tmp_path, monkeypatch).get("/stream?token=tést-token")
+    assert response.status_code == 403
+
+
+async def test_only_one_run_at_a_time(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    release = asyncio.Event()
+    judging = asyncio.Event()
+
+    class BlockingJudge(FakeJudge):
+        async def judge(self, text):
+            judging.set()
+            await release.wait()
+            return await super().judge(text)
+
+    seen = []
+    app = create_app(BlockingJudge(), load=recording_records(seen), token="test-token")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://wall") as c:
+        first = []
+
+        async def consume_first():
+            async with c.stream("GET", "/stream?limit=2&token=test-token") as response:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        first.append(json.loads(line[6:]))
+
+        task = asyncio.create_task(consume_first())
+        await judging.wait()
+
+        second = await c.get("/stream?limit=2&token=test-token")
+        assert sse_messages(second.text) == [
+            {"type": "fatal", "message": "A run is already in progress."}
+        ]
+        assert seen == [2]  # the refused request never loaded a corpus
+
+        release.set()
+        await task
+        assert first[-1]["type"] == "done"
+
+        third = await c.get("/stream?limit=2&token=test-token")
+        assert sse_messages(third.text)[-1]["type"] == "done"
+        assert seen == [2, 2]
+
+
+async def test_the_run_flag_is_released_when_a_run_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    def sometimes_boom(limit=None):
+        calls.append(limit)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return records(limit)
+
+    app = create_app(FakeJudge(), load=sometimes_boom, token="test-token")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://wall") as c:
+        first = await c.get("/stream?limit=2&token=test-token")
+        assert sse_messages(first.text) == [{"type": "fatal", "message": "Run failed: boom"}]
+        second = await c.get("/stream?limit=2&token=test-token")
+        assert sse_messages(second.text)[-1]["type"] == "done"
 
 
 def test_judge_endpoint_returns_verdict(tmp_path, monkeypatch):
