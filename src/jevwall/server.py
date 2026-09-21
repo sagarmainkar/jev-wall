@@ -1,10 +1,12 @@
 """FastAPI app: serve the page, stream a run over SSE, judge one typed prompt."""
 
+import contextlib
 import json
+import secrets
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 
@@ -33,8 +35,15 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-def create_app(judge, load: Callable = load_corpus) -> FastAPI:
-    app = FastAPI(title="Jev Wall")
+def create_app(judge, load: Callable = load_corpus, token: str | None = None) -> FastAPI:
+    token = token or secrets.token_urlsafe(16)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        await judge.aclose()
+
+    app = FastAPI(title="Jev Wall", lifespan=lifespan)
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
@@ -44,14 +53,27 @@ def create_app(judge, load: Callable = load_corpus) -> FastAPI:
     async def get_taxonomy() -> list[dict]:
         return taxonomy.as_json()
 
+    @app.get("/session")
+    async def get_session() -> dict:
+        return {"token": token}
+
     @app.get("/stream")
     async def stream(
-        limit: int = DEFAULT_LIMIT, full: bool = False, max_cost: float = 0.50
+        limit: int = DEFAULT_LIMIT,
+        full: bool = False,
+        max_cost: float = 0.50,
+        stream_token: str = Query("", alias="token"),
     ) -> StreamingResponse:
+        if not secrets.compare_digest(stream_token, token):
+            raise HTTPException(status_code=403, detail="missing or wrong session token")
+
         async def messages() -> AsyncIterator[str]:
             try:
-                async for event in run(load(None if full else limit), judge, max_cost=max_cost):
-                    yield _sse(event)
+                async with contextlib.aclosing(
+                    run(load(None if full else limit), judge, max_cost=max_cost)
+                ) as events:
+                    async for event in events:
+                        yield _sse(event)
             except (CostLimitError, CorpusError) as error:
                 yield _sse({"type": "fatal", "message": str(error)})
 
@@ -60,7 +82,11 @@ def create_app(judge, load: Callable = load_corpus) -> FastAPI:
         )
 
     @app.post("/judge")
-    async def judge_one(request: JudgeRequest) -> dict:
+    async def judge_one(
+        request: JudgeRequest, judge_token: str = Header("", alias="X-Jevwall-Token")
+    ) -> dict:
+        if not secrets.compare_digest(judge_token, token):
+            raise HTTPException(status_code=403, detail="missing or wrong session token")
         try:
             return asdict(await judge.judge(request.text))
         except JudgeError as error:

@@ -796,6 +796,7 @@ window.JEVWALL_RUN = /*__JEVWALL_RUN__*/null;
 
 const RUN = window.JEVWALL_RUN;
 const REPLAY = RUN !== null;
+let sessionToken = "";
 
 const state = {
   events: [],
@@ -1483,7 +1484,9 @@ function setupLive() {
     startButton.textContent = "Running…";
     const query = full.checked ? "full=true"
       : (limitInput.value ? "limit=" + encodeURIComponent(limitInput.value) : "");
-    const source = new EventSource("/stream?" + query);
+    const source = new EventSource(
+      "/stream?" + query + (query ? "&" : "") + "token=" + encodeURIComponent(sessionToken)
+    );
     const stop = (text) => {
       source.close();
       startButton.disabled = false;
@@ -1583,7 +1586,7 @@ function setupTry() {
     try {
       const response = await fetch("/judge", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Jevwall-Token": sessionToken },
         body: JSON.stringify({ text }),
       });
       const body = await response.json();
@@ -1659,6 +1662,7 @@ async function boot() {
   wireThreshold();
 
   const tactics = REPLAY ? RUN.header.taxonomy : await (await fetch("/taxonomy")).json();
+  if (!REPLAY) sessionToken = (await (await fetch("/session")).json()).token;
   buildMatrix(tactics);
   document.getElementById("mode").textContent =
     REPLAY ? `REPLAY · ${RUN.header.started.slice(0, 10)} · ${RUN.header.model}` : "LIVE";
