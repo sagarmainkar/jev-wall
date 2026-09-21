@@ -539,8 +539,9 @@ main {
 #step-reveal {
   position: absolute;
   z-index: 5;
-  right: 10px;
-  bottom: 62px;
+  /* The lane is always empty in step mode, so the reveal lands there and covers nothing live. */
+  left: 14px;
+  top: 14px;
   display: flex;
   align-items: baseline;
   font-family: var(--mono);
@@ -559,12 +560,49 @@ main {
 #step-reveal .agree { color: var(--allowed); }
 #step-reveal .disagree { color: var(--jev); }
 
-/* Real-time | Step: one switch, two segments. */
-#mode-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-#mode-switch button.ghost { border: 0; border-radius: 0; color: var(--mid); }
-#mode-switch button.ghost + button.ghost { border-left: 1px solid var(--line); }
-#mode-switch button[aria-pressed="true"] { background: rgba(255,209,102,.12); color: var(--jev); }
-#mode-switch button:disabled { opacity: .45; cursor: not-allowed; }
+/* Real-time — Step: one slider switch, a label either side. */
+#mode-switch { display: inline-flex; align-items: center; gap: 9px; }
+
+#mode-switch .side {
+  font-size: 11.5px;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+#mode-switch[data-step="false"] .side.realtime { color: var(--text); }
+#mode-switch[data-step="true"] .side.step { color: var(--jev); }
+#mode-switch.locked .side { cursor: not-allowed; opacity: .45; }
+
+#step-toggle {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--raised);
+  transition: background .16s ease, border-color .16s ease;
+}
+
+#step-toggle .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--mid);
+  transition: transform .16s ease, background .16s ease;
+}
+
+#step-toggle[aria-checked="true"] { background: rgba(255,209,102,.16); border-color: rgba(255,209,102,.65); }
+#step-toggle[aria-checked="true"] .knob { transform: translateX(20px); background: var(--jev); }
+#step-toggle:disabled { opacity: .45; cursor: not-allowed; }
+
+#run-note { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 
 button[hidden] { display: none; }
 
@@ -578,6 +616,8 @@ button[hidden] { display: none; }
   padding: 8px 12px;
   min-height: 54px;
 }
+
+#last-text.waiting { color: var(--dim); }
 
 #last-text {
   font-family: var(--mono);
@@ -804,6 +844,7 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   .cell.hit, .cell.unsure, .mark.show { animation: none; }
   .step-callout { transition: opacity .2s ease; transform: none; }
   .step-callout.on { transform: none; }
+  #step-toggle, #step-toggle .knob { transition: none; }
 }
 </style>
 </head>
@@ -1266,27 +1307,37 @@ function flash(el, hold = 620) {
   setTimeout(() => el.classList.remove("flash"), hold);
 }
 
+// A technique the taxonomy does not know about lights the NONE cell.
+const techniqueCellFor = (e) =>
+  cells.has(e.technique) && e.technique !== "none" ? cells.get(e.technique) : cells.get("none");
+
+// The ≠ pop. Step mode holds it back until the reveal, where the words say the same thing.
+function markDisagreement(e) {
+  const flagged = e.p_attack >= state.threshold;
+  if (flagged === e.truth) return;
+  const mark = $(flagged ? "mark-blocked" : "mark-allowed");
+  mark.classList.remove("show");
+  void mark.offsetWidth;
+  mark.classList.add("show");
+}
+
 // The three answers land independently, so each one is its own function: normal playback fires all
 // three at once, step mode fires them one after another. Each returns the element it lit, which is
-// what step mode anchors its callout to.
-function landVerdict(e) {
+// what step mode anchors its callout to. `withBeam: false` means the caller has already drawn the
+// beams, which is how normal playback keeps all of its rect reads together.
+function landVerdict(e, { withBeam = true, mark = true } = {}) {
   const flagged = e.p_attack >= state.threshold;
   const cell = $(flagged ? "b-blocked" : "b-allowed");
-  if (!REDUCED) beam(cell, flagged ? "#ff4d6d" : "#4fbfff");
+  if (withBeam && !REDUCED) beam(cell, flagged ? "#ff4d6d" : "#4fbfff");
   flash(cell);
-  if (flagged !== e.truth) {
-    const mark = $(flagged ? "mark-blocked" : "mark-allowed");
-    mark.classList.remove("show");
-    void mark.offsetWidth;
-    mark.classList.add("show");
-  }
+  if (mark) markDisagreement(e);
   return cell;
 }
 
-function landTechnique(e) {
+function landTechnique(e, { withBeam = true } = {}) {
   const known = cells.has(e.technique) && e.technique !== "none";
-  const cell = known ? cells.get(e.technique) : cells.get("none");
-  if (!REDUCED) beam(cell, "#a97bff");
+  const cell = techniqueCellFor(e);
+  if (withBeam && !REDUCED) beam(cell, "#a97bff");
   if (!known) {
     flash(cells.get("none"));
   } else if (cell) {
@@ -1298,9 +1349,9 @@ function landTechnique(e) {
   return cell;
 }
 
-function landSeverity(e) {
+function landSeverity(e, { withBeam = true } = {}) {
   const cell = $("sev-" + sevBucket(e.severity));
-  if (!REDUCED) beam(cell, SEVERITY_HEX[sevBucket(e.severity)]);
+  if (withBeam && !REDUCED) beam(cell, SEVERITY_HEX[sevBucket(e.severity)]);
   flash(cell);
   return cell;
 }
@@ -1309,9 +1360,18 @@ function landSeverity(e) {
 // to happen here at all. No beams, no flashes, no forced layouts — the wall keeps up instead.
 function land(e, { animate = true } = {}) {
   if (!animate) return;
-  landVerdict(e);
-  landTechnique(e);
-  landSeverity(e);
+  // All three beams are drawn first, so every rect read of a landing happens before any of its
+  // class writes. Splitting the landing into three functions must not make the wall measure the
+  // page three times per prompt.
+  if (!REDUCED) {
+    const flagged = e.p_attack >= state.threshold;
+    beam($(flagged ? "b-blocked" : "b-allowed"), flagged ? "#ff4d6d" : "#4fbfff");
+    beam(techniqueCellFor(e), "#a97bff");
+    beam($("sev-" + sevBucket(e.severity)), SEVERITY_HEX[sevBucket(e.severity)]);
+  }
+  landVerdict(e, { withBeam: false });
+  landTechnique(e, { withBeam: false });
+  landSeverity(e, { withBeam: false });
 }
 
 function fly(e) {
@@ -1375,6 +1435,7 @@ function clearStage() {
 
 function showLast(e) {
   setText($("last-text"), clip(e.text.replace(/\s+/g, " ").trim(), 200));
+  $("last-text").classList.remove("waiting");
   const p = $("last-p");
   p.textContent = e.p_attack.toFixed(2);
   p.style.color = e.p_attack >= state.threshold ? "var(--blocked)" : "var(--allowed)";
@@ -1728,8 +1789,11 @@ function banner(payload, bad) {
     el.textContent = payload.message || "The run failed.";
     return;
   }
-  const parts = [state.events.length + " prompts attempted"];
-  if (state.errors > 0) parts.push(state.errors + " errored");
+  // A stepped live run has more events in hand than on screen, so the caller can say how many.
+  const attempted = payload.attempted !== undefined ? payload.attempted : state.events.length;
+  const errors = payload.errors !== undefined ? payload.errors : state.errors;
+  const parts = [attempted + " prompts attempted"];
+  if (errors > 0) parts.push(errors + " errored");
   parts.push("$" + (payload.cost !== undefined ? payload.cost : costDollars()).toFixed(4));
   if (payload.stopped_early) parts.push("stopped early at the cost ceiling");
   el.textContent = parts.join(" · ");
@@ -1801,10 +1865,15 @@ function stepCard(e, position, total) {
   return card;
 }
 
-// A callout has to be unmistakably attached to the thing it describes. When the target is tall
-// enough to hold it, the callout sits inside the target's lower edge; otherwise it sits beside it,
-// on the same line. Either way it is never allowed to land on a callout that is already up.
-function stepCallout(target, text, colour) {
+const CALLOUT_GAP = 9;
+
+// A callout has to be unmistakably attached to the thing it describes without hiding it, so each
+// answer says where its own callout goes:
+//   "inside" — in the target's lower edge, over static caption text only (the verdict bucket)
+//   "below"  — under the target, flipping above when `within` has no room (a matrix cell)
+//   "beside" — level with the target, just outside it (a severity row, whose label fills it)
+// Whichever it is, a callout never lands on one that is already up.
+function stepCallout(target, text, colour, place, within) {
   if (!target) return;
   const wrap = $("stagewrap");
   const el = document.createElement("div");
@@ -1816,14 +1885,19 @@ function stepCallout(target, text, colour) {
   const bounds = wrap.getBoundingClientRect();
   const r = target.getBoundingClientRect();
   const w = el.offsetWidth, h = el.offsetHeight;
-  let x, y;
-  if (r.height >= h + 16) {
-    x = r.left - bounds.left + r.width / 2 - w / 2;
-    y = r.bottom - bounds.top - h - 9;
-  } else {
+  const limit = within ? within.getBoundingClientRect() : bounds;
+  const floor = limit.bottom - bounds.top - 2;
+  let x = r.left - bounds.left + r.width / 2 - w / 2;
+  let y;
+  if (place === "beside") {
     y = r.top - bounds.top + r.height / 2 - h / 2;
-    x = r.right - bounds.left + 10;
-    if (x + w > bounds.width - 6) x = r.left - bounds.left - w - 10;
+    x = r.right - bounds.left + CALLOUT_GAP;
+    if (x + w > bounds.width - 6) x = r.left - bounds.left - w - CALLOUT_GAP;
+  } else if (place === "below") {
+    y = r.bottom - bounds.top + CALLOUT_GAP;
+    if (y + h > floor) y = r.top - bounds.top - CALLOUT_GAP - h;
+  } else {
+    y = r.bottom - bounds.top - h - CALLOUT_GAP;
   }
   x = Math.max(6, Math.min(x, bounds.width - w - 6));
   for (const other of wrap.querySelectorAll(".step-callout")) {
@@ -1838,6 +1912,23 @@ function stepCallout(target, text, colour) {
   el.style.left = x + "px";
   el.style.top = y + "px";
   requestAnimationFrame(() => el.classList.add("on"));
+}
+
+// While a card is parked there is no answer yet. The readout under the stage must not keep the
+// previous prompt's verdict next to it, and the previous prompt's highlights must not still be
+// glowing, or on camera both read as belonging to the prompt being read out loud.
+function stepReading(position) {
+  const text = $("last-text");
+  setText(text, "Reading prompt " + position + "…");
+  text.classList.add("waiting");
+  for (const id of ["last-p", "last-tech", "last-sev"]) {
+    const el = $(id);
+    el.textContent = "—";
+    el.style.color = "";
+  }
+  for (const el of $("stagewrap").querySelectorAll(".flash")) el.classList.remove("flash");
+  for (const cell of cells.values()) cell.classList.remove("hit", "unsure");
+  for (const mark of document.querySelectorAll(".mark")) mark.classList.remove("show");
 }
 
 function stepRevealStrip(e) {
@@ -1874,23 +1965,28 @@ const severityText = (e) =>
 // playback to pause and simply hands over the events it already received.
 function setupStep(control) {
   const controls = $("controls");
-  const segment = (id, text, title, pressed) => {
-    const button = document.createElement("button");
-    button.id = id;
-    button.type = "button";
-    button.className = "ghost";
-    button.textContent = text;
-    button.title = title;
-    button.setAttribute("aria-pressed", pressed ? "true" : "false");
-    return button;
+  const side = (className, text) => {
+    const el = document.createElement("span");
+    el.className = "side " + className;
+    el.textContent = text;
+    return el;
   };
-  const realtime = segment("mode-realtime", "Real-time", "Play the run as it happened", true);
-  const toggle = segment("step-toggle", "Step", "Walk through the run one prompt at a time", false);
+  const realtime = side("realtime", "Real-time");
+  const stepSide = side("step", "Step");
+  const toggle = document.createElement("button");
+  toggle.id = "step-toggle";
+  toggle.type = "button";
+  toggle.setAttribute("role", "switch");
+  toggle.setAttribute("aria-checked", "false");
+  toggle.setAttribute("aria-label", "Step mode");
+  toggle.title = "Walk through the run one prompt at a time";
+  const knob = document.createElement("span");
+  knob.className = "knob";
+  toggle.append(knob);
   const modeSwitch = document.createElement("div");
   modeSwitch.id = "mode-switch";
-  modeSwitch.setAttribute("role", "group");
-  modeSwitch.setAttribute("aria-label", "Playback mode");
-  modeSwitch.append(realtime, toggle);
+  modeSwitch.dataset.step = "false";
+  modeSwitch.append(realtime, toggle, stepSide);
   const next = document.createElement("button");
   next.id = "step-next";
   next.type = "button";
@@ -1915,10 +2011,12 @@ function setupStep(control) {
     }
   }
 
+  // When there is no next event, the control says why: live mode is either waiting on Jev or
+  // waiting on a run that has not been started. A replay is simply over.
   function ready() {
     skipErrors();
-    if (atEnd()) label("End of run", true);
-    else label("Next prompt", false);
+    if (!atEnd()) { label("Next prompt", false); return; }
+    label((control.pending && control.pending()) || "End of run", true);
   }
 
   function showCard() {
@@ -1927,6 +2025,7 @@ function setupStep(control) {
     }
     const list = events();
     const card = stepCard(list[step.index], step.index + 1, list.length);
+    stepReading(step.index + 1);
     step.read = true;
     if (REDUCED) { label("Ask Jev", false); return; }
     step.busy = true;
@@ -1948,6 +2047,7 @@ function setupStep(control) {
     // reveal, not while the audience is still reading.
     const finish = () => {
       stepRevealStrip(e);
+      markDisagreement(e);   // held back from the verdict beam so the ≠ and the words agree
       ingest(e, { stage: false });
       step.index++;
       step.read = false;
@@ -1958,11 +2058,17 @@ function setupStep(control) {
     step.busy = true;
     label("Ask Jev", true);
 
+    const grid = $("matrix").querySelector(".grid");
+    const callVerdict = (cell) => stepCallout(cell, verdictText(e), verdictColour, "inside");
+    const callTechnique = (cell) =>
+      stepCallout(cell, techniqueText(e), "#a97bff", "below", cell && cell.closest(".grid") ? grid : null);
+    const callSeverity = (cell) => stepCallout(cell, severityText(e), severityColour, "beside");
+
     if (REDUCED) {
       if (step.card) { step.card.remove(); step.card = null; }
-      stepCallout(landVerdict(e), verdictText(e), verdictColour);
-      stepCallout(landTechnique(e), techniqueText(e), "#a97bff");
-      stepCallout(landSeverity(e), severityText(e), severityColour);
+      callVerdict(landVerdict(e, { mark: false }));
+      callTechnique(landTechnique(e));
+      callSeverity(landSeverity(e));
       finish();
       return;
     }
@@ -1981,22 +2087,26 @@ function setupStep(control) {
       run.onfinish = () => { card.remove(); if (step.card === card) step.card = null; };
     }
 
-    const fire = (at, landOne, text, colour) => stepTimer(() => {
-      const target = landOne(e);
-      stepTimer(() => stepCallout(target, text, colour), CALLOUT_MS);
+    const fire = (at, landOne, callOut) => stepTimer(() => {
+      const target = landOne();
+      stepTimer(() => callOut(target), CALLOUT_MS);
     }, at);
 
-    fire(SHRINK_MS, landVerdict, verdictText(e), verdictColour);
-    fire(SHRINK_MS + SLOT_MS, landTechnique, techniqueText(e), "#a97bff");
-    fire(SHRINK_MS + 2 * SLOT_MS, landSeverity, severityText(e), severityColour);
+    fire(SHRINK_MS, () => landVerdict(e, { mark: false }), callVerdict);
+    fire(SHRINK_MS + SLOT_MS, () => landTechnique(e), callTechnique);
+    fire(SHRINK_MS + 2 * SLOT_MS, () => landSeverity(e), callSeverity);
     stepTimer(finish, SHRINK_MS + 3 * SLOT_MS);
+  }
+
+  function setSwitch(on) {
+    toggle.setAttribute("aria-checked", on ? "true" : "false");
+    modeSwitch.dataset.step = on ? "true" : "false";
   }
 
   function enter() {
     control.pause();
     step.on = true;
-    toggle.setAttribute("aria-pressed", "true");
-    realtime.setAttribute("aria-pressed", "false");
+    setSwitch(true);
     next.hidden = false;
     resetRun();
     step.index = 0;
@@ -2005,15 +2115,20 @@ function setupStep(control) {
 
   function leave() {
     step.on = false;
-    toggle.setAttribute("aria-pressed", "false");
-    realtime.setAttribute("aria-pressed", "true");
+    setSwitch(false);
     next.hidden = true;
     clearStage();   // a beam may still be in flight, so clear the whole stage, not just the card
     control.resume(step.index);
   }
 
-  toggle.onclick = () => { if (!step.on) enter(); };
-  realtime.onclick = () => { if (step.on) leave(); };
+  const setMode = (on) => {
+    if (toggle.disabled || on === step.on) return;
+    if (on) enter(); else leave();
+  };
+
+  toggle.onclick = () => setMode(!step.on);
+  realtime.onclick = () => setMode(false);
+  stepSide.onclick = () => setMode(true);
 
   next.onclick = () => {
     if (!step.on || step.busy || next.disabled) return;
@@ -2024,27 +2139,25 @@ function setupStep(control) {
   document.addEventListener("keydown", (event) => {
     if (!step.on) return;
     if (event.key !== "ArrowRight" && event.key !== " " && event.key !== "Spacebar") return;
+    if (event.repeat) return;   // holding the key must not run the presentation by itself
     const focused = document.activeElement;
     const tag = focused ? focused.tagName : "";
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     if (focused && focused.isContentEditable) return;
     if (focused && modeSwitch.contains(focused)) return;   // Space on the switch changes the mode
+    // Every other focused button keeps the key and nothing happens: Space must never reach
+    // "Start run" or "Judge it", which spend money, and must not advance the presentation either.
+    if (tag === "BUTTON" && focused !== next) { event.preventDefault(); return; }
     if (event.key !== "ArrowRight") event.preventDefault();  // …and does not scroll the page
     next.click();
   });
 
-  toggle.disabled = true;
-
   return {
     isOn: () => step.on,
     restart() { step.index = 0; ready(); },
-    setAvailable(value) {
-      if (!value && step.on) leave();
-      toggle.disabled = !value;
-      toggle.title = value
-        ? "Walk through the run one prompt at a time"
-        : "Available once a run has finished";
-    },
+    // The event list grew or ended: re-read the button, unless an animation or a parked card
+    // owns it right now.
+    refresh() { if (step.on && !step.busy && !step.read) ready(); },
   };
 }
 
@@ -2082,16 +2195,43 @@ function setupLive() {
 
   controls.append(label, fullLabel, startButton);
 
-  // Live mode may only step through a run that has already finished, over the events it received.
-  // It never reopens the stream: `events` is a snapshot, because entering step mode empties state.
+  const runNote = document.createElement("span");
+  runNote.id = "run-note";
+
+  // Every event of the current run, in arrival order, whether or not it has been shown yet. Step
+  // mode walks this list; it never opens a stream of its own.
   let received = [];
+  let finished = null;    // the `done` payload, so Real-time can put the summary back
+  let streaming = false;
+  let requested = "";
+
+  function showNote() {
+    runNote.textContent = requested && (streaming || finished)
+      ? requested + " · " + received.length + " received"
+      : "";
+  }
+
+  // Leaving step mode must not throw away a run the user paid for. There is no playback to
+  // resume, so Real-time means: rebuild everything received so far, exactly as it was. If the run
+  // is still going, the events after this one animate normally from here.
+  function showWholeRun() {
+    resetRun();
+    for (const e of received) ingest(e, { stage: false });
+    if (finished) banner(finished);
+  }
+
   const stepApi = setupStep({
     events: () => received,
     pause() {},
-    resume() {},
+    resume() { if (received.length > 0) showWholeRun(); },
+    pending() {
+      if (streaming) return "Waiting for Jev…";
+      if (received.length === 0) return "Start a run first";
+      return null;
+    },
   });
 
-  controls.append(limitMessage);
+  controls.append(limitMessage, runNote);
 
   full.addEventListener("change", () => {
     limitInput.disabled = full.checked;
@@ -2100,6 +2240,7 @@ function setupLive() {
 
   startButton.onclick = () => {
     let query = "full=true";
+    requested = "full corpus";
     if (!full.checked) {
       // Only a whole number of prompts, at least one: anything else is a run nobody meant.
       const limit = Number(limitInput.value);
@@ -2110,36 +2251,52 @@ function setupLive() {
       }
       limitMessage.textContent = "";
       query = "limit=" + encodeURIComponent(String(limit));
+      requested = limit + " prompts requested";
     }
     startButton.disabled = true;
     startButton.textContent = "Running…";
-    stepApi.setAvailable(false);
+    // A run always starts from an empty wall, whether or not the last one was stepped through.
+    // Step mode is left exactly as the user set it: choosing to step does not cost a run.
+    received = [];
+    finished = null;
+    streaming = true;
+    resetRun();
+    showNote();
+    stepApi.restart();
     const source = new EventSource(
       "/stream?" + query + "&token=" + encodeURIComponent(sessionToken)
     );
     const stop = (text) => {
       source.close();
+      streaming = false;
       startButton.disabled = false;
       startButton.textContent = text;
+      showNote();
+      stepApi.refresh();
     };
     source.onmessage = (m) => {
       const e = JSON.parse(m.data);
       if (e.type === "done" || e.type === "fatal") {
+        if (e.type === "done") finished = e;
         stop("Start run");
-        banner(e);
-        if (e.type === "done") {
-          received = state.events.slice();
-          stepApi.setAvailable(received.length > 0);
-        }
+        // While stepping, the wall only holds the prompts stepped so far, so the summary counts
+        // what actually arrived instead.
+        banner(stepApi.isOn()
+          ? { ...e, attempted: received.length, errors: received.filter((x) => x.error).length }
+          : e);
         return;
       }
-      ingest(e);
+      received.push(e);
+      // In step mode the event is buffered only: it reaches the wall when the user asks for it.
+      if (stepApi.isOn()) { showNote(); stepApi.refresh(); } else { showNote(); ingest(e); }
     };
     // Closing the EventSource only stops this browser listening; the server-side run may still be
     // going, and spending. Start stays disabled until the page is reloaded.
     source.onerror = () => {
       source.close();
+      streaming = false;
       startButton.textContent = "Stream dropped";
+      stepApi.refresh();
       banner({ type: "fatal", message: "Stream disconnected — the run may still be finishing on "
         + "the server. Reload the page before starting again." });
     };
@@ -2173,26 +2330,28 @@ function setupReplay() {
   note.textContent = "recorded run · no API calls";
   controls.append(playButton, speedSelect, again);
 
+  let wasPlaying = true;
+
   const stepApi = setupStep({
     events: () => RUN.events,
     pause() {
+      wasPlaying = playing;
       playing = false;
       playButton.disabled = true;
       speedSelect.disabled = true;
     },
-    // Normal playback picks up exactly where the stepping got to.
+    // Normal playback picks up exactly where the stepping got to, and as paused or playing as the
+    // user left it: stepping is not a reason to start a replay they had deliberately stopped.
     resume(at) {
       index = at;
       clock = at > 0 ? RUN.events[at - 1].t : 0;
       speedSelect.disabled = false;
-      playing = true;
+      playing = wasPlaying;
       playButton.disabled = false;
-      playButton.textContent = "Pause";
-      last = performance.now();
-      start();
+      playButton.textContent = playing ? "Pause" : "Play";
+      kick();
     },
   });
-  stepApi.setAvailable(true);
 
   controls.append(note);
   speedSelect.value = "1";
@@ -2209,14 +2368,19 @@ function setupReplay() {
       banner({ type: "done", cost: costDollars() });
     }
   }
-  function start() {
+  // Restart the frame loop without deciding whether it is playing.
+  function kick() {
     if (running) return;
     running = true;
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }
+  function start() {
+    if (running) return;
     playing = true;
     playButton.disabled = false;
     playButton.textContent = "Pause";
-    last = performance.now();
-    requestAnimationFrame(frame);
+    kick();
   }
   playButton.onclick = () => {
     playing = !playing;
