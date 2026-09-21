@@ -43,3 +43,15 @@ def test_load_corpus_shuffles_deterministically_and_limits(monkeypatch):
     assert first == second
     assert len(first) == 6
     assert {r.source for r in corpus.load_corpus()} == {"deepset", "jackhhao"}
+
+
+def test_load_corpus_limit_zero_returns_empty(monkeypatch):
+    monkeypatch.setattr(
+        corpus,
+        "_download",
+        lambda name: [
+            {"text": f"t{i}", "label": i % 2, "prompt": f"p{i}", "type": "benign"}
+            for i in range(10)
+        ],
+    )
+    assert corpus.load_corpus(limit=0) == []

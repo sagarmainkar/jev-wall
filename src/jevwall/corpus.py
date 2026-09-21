@@ -62,4 +62,4 @@ def _download(name: str) -> list[dict]:
 def load_corpus(limit: int | None = None, seed: int = 7) -> list[Record]:
     records = from_deepset(_download(DEEPSET)) + from_jackhhao(_download(JACKHHAO))
     random.Random(seed).shuffle(records)
-    return records[:limit] if limit else records
+    return records if limit is None else records[:limit]
